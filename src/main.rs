@@ -90,9 +90,9 @@ impl App {
         App {
             time_start: Instant::now(),
             pomodoro_length,
-            tasks: StatefulList::with_items(task_list.iter().map(|name| {
-                (name.clone(), false)
-            }).collect()),
+            tasks: StatefulList::with_items(
+                task_list.iter().map(|name| (name.clone(), false)).collect(),
+            ),
         }
     }
 
@@ -237,16 +237,24 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         format!("Task completed")
     };
 
-    let text = Spans::from(
+    let task = Spans::from(Span::styled(
         app.get_current_task_name()
             .unwrap_or(&"No task selected".to_string())
             .clone(),
-    );
+        Style::default().fg(Color::Red),
+    ));
+
     let time = Spans::from(Span::styled(
         time_remaining_text,
         Style::default().fg(Color::Red),
     ));
-    let paragraph = Paragraph::new(vec![text, time])
+
+    let q_to_quit = Spans::from(Span::styled(
+        "Press q to quit",
+        Style::default().fg(Color::Red),
+    ));
+
+    let paragraph = Paragraph::new(vec![task, time, q_to_quit])
         .style(Style::default())
         .block(Block::default());
 
@@ -267,7 +275,12 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .collect();
 
     let items = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("List"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("List")
+                .border_style(Style::default().fg(Color::Red)),
+        )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
 
