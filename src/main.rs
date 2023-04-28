@@ -11,22 +11,24 @@ use std::{
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Span, Text},
-    widgets::{Block, Borders, Gauge},
+    style::{Color, Style},
+    text::{Span, Spans},
+    widgets::{Block, Borders, Gauge, Paragraph},
     Frame, Terminal,
 };
 
 struct App {
+    task_name: String,
     time_start: Instant,
-    pomodoro_length: Duration
+    pomodoro_length: Duration,
 }
 
 impl App {
-    fn new() -> App {
+    fn new(task_name: String, pomodoro_length: Duration) -> App {
         App {
+            task_name,
             time_start: Instant::now(),
-            pomodoro_length: Duration::from_secs(25 * 60),
+            pomodoro_length,
         }
     }
 
@@ -35,7 +37,22 @@ impl App {
     }
 }
 
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Name of task
+    #[arg(short, long)]
+    task_name: String,
+
+    /// Length of one pomodoro [min]
+    #[arg(short, long, default_value_t=25)]
+    length: u64,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -45,7 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // create app and run it
     let tick_rate = Duration::from_millis(250);
-    let app = App::new();
+    let app = App::new(args.task_name, Duration::from_secs(args.length * 60));
     let res = run_app(&mut terminal, app, tick_rate);
 
     // restore terminal
@@ -98,20 +115,28 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         .split(f.size());
 
     let elapsed = Instant::now() - app.time_start;
-    let remaining = app.pomodoro_length - elapsed;
+    let remaining = app.pomodoro_length.saturating_sub(elapsed);
     let remaining_min = remaining.as_secs() / 60;
     let remaining_secs = remaining.as_secs() % 60;
 
     let gauge = Gauge::default()
         .block(Block::default().title(" Pomodoro ").borders(Borders::ALL))
         .gauge_style(Style::default().fg(Color::Red))
-        .percent((elapsed.as_millis() * 100 / app.pomodoro_length.as_millis()) as u16);
+        .percent((elapsed.as_millis() * 100 / app.pomodoro_length.as_millis()).min(100) as u16);
     f.render_widget(gauge, chunks[0]);
 
-    let block = Block::default().title(Span::styled(
-        format!("Time remaining: {remaining_min} min {remaining_secs} secs"),
+    let time_remaining_text = if !remaining.is_zero() {
+        format!("Time remaining: {remaining_min} min {remaining_secs} secs")
+    } else {
+        format!("Task completed")
+    };
+
+    let text = Spans::from(app.task_name.clone());
+    let time = Spans::from(Span::styled(
+        time_remaining_text,
         Style::default().fg(Color::Red),
     ));
+    let paragraph = Paragraph::new(vec![text,time]).style(Style::default()).block(Block::default());
 
-    f.render_widget(block, chunks[1])
+    f.render_widget(paragraph, chunks[1])
 }
