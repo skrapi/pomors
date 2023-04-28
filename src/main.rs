@@ -11,16 +11,79 @@ use std::{
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
+
+struct StatefulList<T> {
+    state: ListState,
+    items: Vec<T>,
+}
+
+impl<T> StatefulList<T> {
+    fn with_items(items: Vec<T>) -> StatefulList<T> {
+        StatefulList {
+            state: ListState::default(),
+            items,
+        }
+    }
+
+    fn next(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i >= self.items.len() - 1 {
+                    0
+                } else {
+                    i + 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+
+    fn previous(&mut self) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.items.len() - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+
+    fn unselect(&mut self) {
+        self.state.select(None);
+    }
+
+    fn get_selected_mut(&mut self) -> Option<&mut T> {
+        if let Some(selected) = self.state.selected() {
+            Some(&mut self.items[selected])
+        } else {
+            None
+        }
+    }
+
+    fn get_selected(&self) -> Option<&T> {
+        if let Some(selected) = self.state.selected() {
+            Some(&self.items[selected])
+        } else {
+            None
+        }
+    }
+}
 
 struct App {
     task_name: String,
     time_start: Instant,
     pomodoro_length: Duration,
+    tasks: StatefulList<(String, bool)>,
 }
 
 impl App {
@@ -29,11 +92,42 @@ impl App {
             task_name,
             time_start: Instant::now(),
             pomodoro_length,
+            tasks: StatefulList::with_items(vec![
+                ("Task 1".to_string(), false),
+                ("Task 2".to_string(), false),
+                ("Task 3".to_string(), false),
+            ]),
         }
     }
 
     fn on_tick(&mut self) {
         // TODO
+    }
+
+    fn set_current(&mut self) {
+        if let Some(selected_task) = self.tasks.get_selected_mut() {
+            selected_task.1 = true;
+        }
+    }
+
+    fn reset_current(&mut self) {
+        if let Some(selected_task) = self.tasks.get_selected_mut() {
+            selected_task.1 = false;
+        }
+    }
+
+    fn toggle_current_task(&mut self) {
+        if let Some(selected_task) = self.tasks.get_selected_mut() {
+            selected_task.1 = !selected_task.1;
+        }
+    }
+
+    fn get_current_task_name(&self) -> Option<&String> {
+        if let Some(selected_task) = self.tasks.get_selected() {
+            Some(&selected_task.0)
+        } else {
+            None
+        }
     }
 }
 
@@ -47,7 +141,7 @@ struct Args {
     task_name: String,
 
     /// Length of one pomodoro [min]
-    #[arg(short, long, default_value_t=25)]
+    #[arg(short, long, default_value_t = 25)]
     length: u64,
 }
 
@@ -88,15 +182,19 @@ fn run_app<B: Backend>(
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     loop {
-        terminal.draw(|f| ui(f, &app))?;
+        terminal.draw(|f| ui(f, &mut app))?;
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if let KeyCode::Char('q') = key.code {
-                    return Ok(());
+                match key.code {
+                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Down => app.tasks.next(),
+                    KeyCode::Up => app.tasks.previous(),
+                    KeyCode::Enter => app.toggle_current_task(),
+                    _ => {}
                 }
             }
         }
@@ -107,11 +205,18 @@ fn run_app<B: Backend>(
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
+fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([Constraint::Max(5), Constraint::Max(12), Constraint::Max(12)].as_ref())
+        .margin(3)
+        .constraints(
+            [
+                Constraint::Percentage(20),
+                Constraint::Percentage(40),
+                Constraint::Percentage(40),
+            ]
+            .as_ref(),
+        )
         .split(f.size());
 
     let elapsed = Instant::now() - app.time_start;
@@ -120,7 +225,12 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
     let remaining_secs = remaining.as_secs() % 60;
 
     let gauge = Gauge::default()
-        .block(Block::default().title(" Pomodoro ").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(Span::styled(" Pomodoro ", Style::default().fg(Color::Red)))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Red)),
+        )
         .gauge_style(Style::default().fg(Color::Red))
         .percent((elapsed.as_millis() * 100 / app.pomodoro_length.as_millis()).min(100) as u16);
     f.render_widget(gauge, chunks[0]);
@@ -131,12 +241,40 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
         format!("Task completed")
     };
 
-    let text = Spans::from(app.task_name.clone());
+    let text = Spans::from(
+        app.get_current_task_name()
+            .unwrap_or(&"No task selected".to_string())
+            .clone(),
+    );
     let time = Spans::from(Span::styled(
         time_remaining_text,
         Style::default().fg(Color::Red),
     ));
-    let paragraph = Paragraph::new(vec![text,time]).style(Style::default()).block(Block::default());
+    let paragraph = Paragraph::new(vec![text, time])
+        .style(Style::default())
+        .block(Block::default());
 
-    f.render_widget(paragraph, chunks[1])
+    f.render_widget(paragraph, chunks[1]);
+
+    let items: Vec<ListItem> = app
+        .tasks
+        .items
+        .iter()
+        .map(|(task, is_complete)| {
+            let color = if *is_complete {
+                Color::Green
+            } else {
+                Color::Red
+            };
+            ListItem::new(task.clone()).style(Style::default().fg(color))
+        })
+        .collect();
+
+    let items = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("List"))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(">> ");
+
+    // We can now render the item list
+    f.render_stateful_widget(items, chunks[2], &mut app.tasks.state);
 }
