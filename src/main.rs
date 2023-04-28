@@ -80,23 +80,19 @@ impl<T> StatefulList<T> {
 }
 
 struct App {
-    task_name: String,
     time_start: Instant,
     pomodoro_length: Duration,
     tasks: StatefulList<(String, bool)>,
 }
 
 impl App {
-    fn new(task_name: String, pomodoro_length: Duration) -> App {
+    fn new(task_list: Vec<String>, pomodoro_length: Duration) -> App {
         App {
-            task_name,
             time_start: Instant::now(),
             pomodoro_length,
-            tasks: StatefulList::with_items(vec![
-                ("Task 1".to_string(), false),
-                ("Task 2".to_string(), false),
-                ("Task 3".to_string(), false),
-            ]),
+            tasks: StatefulList::with_items(task_list.iter().map(|name| {
+                (name.clone(), false)
+            }).collect()),
         }
     }
 
@@ -136,9 +132,9 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Name of task
-    #[arg(short, long)]
-    task_name: String,
+    /// List of tasks
+    #[clap(short, long, value_parser, num_args = 1.., value_delimiter = ' ')]
+    task_list: Vec<String>,
 
     /// Length of one pomodoro [min]
     #[arg(short, long, default_value_t = 25)]
@@ -156,7 +152,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // create app and run it
     let tick_rate = Duration::from_millis(250);
-    let app = App::new(args.task_name, Duration::from_secs(args.length * 60));
+    let app = App::new(args.task_list, Duration::from_secs(args.length * 60));
     let res = run_app(&mut terminal, app, tick_rate);
 
     // restore terminal
