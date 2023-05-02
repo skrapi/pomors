@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -79,10 +80,27 @@ impl<T> StatefulList<T> {
     }
 }
 
+struct Task {
+    name: String,
+    is_complete: bool,
+    start: DateTime<Utc>,
+    end: Option<DateTime<Utc>>,
+}
+
+impl Task {
+    fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            is_complete: false,
+            start: Utc::now(),
+            end: None,
+        }
+    }
+}
 struct App {
     time_start: Instant,
     pomodoro_length: Duration,
-    tasks: StatefulList<(String, bool)>,
+    tasks: StatefulList<Task>,
 }
 
 impl App {
@@ -91,7 +109,10 @@ impl App {
             time_start: Instant::now(),
             pomodoro_length,
             tasks: StatefulList::with_items(
-                task_list.iter().map(|name| (name.clone(), false)).collect(),
+                task_list
+                    .iter()
+                    .map(|name| Task::new(name.trim()))
+                    .collect(),
             ),
         }
     }
@@ -102,25 +123,25 @@ impl App {
 
     fn set_current(&mut self) {
         if let Some(selected_task) = self.tasks.get_selected_mut() {
-            selected_task.1 = true;
+            selected_task.is_complete = true;
         }
     }
 
     fn reset_current(&mut self) {
         if let Some(selected_task) = self.tasks.get_selected_mut() {
-            selected_task.1 = false;
+            selected_task.is_complete = false;
         }
     }
 
     fn toggle_current_task(&mut self) {
         if let Some(selected_task) = self.tasks.get_selected_mut() {
-            selected_task.1 = !selected_task.1;
+            selected_task.is_complete = !selected_task.is_complete;
         }
     }
 
     fn get_current_task_name(&self) -> Option<&String> {
         if let Some(selected_task) = self.tasks.get_selected() {
-            Some(&selected_task.0)
+            Some(&selected_task.name)
         } else {
             None
         }
@@ -133,7 +154,7 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// List of tasks
-    #[clap(short, long, value_parser, num_args = 1.., value_delimiter = ' ')]
+    #[clap(short, long, value_parser, num_args = 1.., value_delimiter = ',')]
     task_list: Vec<String>,
 
     /// Length of one pomodoro [min]
@@ -264,13 +285,13 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .tasks
         .items
         .iter()
-        .map(|(task, is_complete)| {
-            let color = if *is_complete {
+        .map(|task| {
+            let color = if task.is_complete {
                 Color::Green
             } else {
                 Color::Red
             };
-            ListItem::new(task.clone()).style(Style::default().fg(color))
+            ListItem::new(format!("{} : {}", task.name, task.start)).style(Style::default().fg(color))
         })
         .collect();
 
@@ -278,7 +299,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("List")
+                .title(" Task List ")
                 .border_style(Style::default().fg(Color::Red)),
         )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
