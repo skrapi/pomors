@@ -1,12 +1,16 @@
 use chrono::{DateTime, Utc};
+use clap::Parser;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
-    io,
+    fs, io,
+    path::PathBuf,
+    str::FromStr,
     time::{Duration, Instant},
 };
 use tui::{
@@ -148,7 +152,16 @@ impl App {
     }
 }
 
-use clap::Parser;
+#[derive(Debug, Serialize, Deserialize)]
+struct Config {
+    pomodoro_length: Duration,
+    break_length: Duration,
+}
+
+const DEFAULT_CONFIG: Config = Config {
+    pomodoro_length: Duration::from_secs(25 * 60),
+    break_length: Duration::from_secs(5 * 60),
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -163,7 +176,32 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // Get args
     let args = Args::parse();
+
+    // Get config
+    let pomors_dir =
+        PathBuf::from_str(".config/pomors").expect("This should be a valid directory");
+
+    match fs::read_dir(&pomors_dir) {
+        Ok(_) => {
+                 if let Ok(config_file) = fs::read_to_string(pomors_dir.join("config.json")) {
+                        let config = serde_json::from_str::<Config>(&config_file);
+                println!("{config:?}");
+            }
+        }
+        Err(e) => match e.kind() {
+            io::ErrorKind::NotFound => {
+                fs::create_dir_all(&pomors_dir).expect("Failed to created pomors directory.");
+                fs::write(
+                    pomors_dir.join("config.json"),
+                    serde_json::to_string_pretty(&DEFAULT_CONFIG).expect("The default config is not serializable.")
+                );
+            }
+            _ => panic!("Error reading .config/pomors: {e}"),
+        },
+    };
+
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -291,7 +329,8 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             } else {
                 Color::Red
             };
-            ListItem::new(format!("{} : {}", task.name, task.start)).style(Style::default().fg(color))
+            ListItem::new(format!("{} : {}", task.name, task.start))
+                .style(Style::default().fg(color))
         })
         .collect();
 
