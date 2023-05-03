@@ -87,7 +87,7 @@ impl<T> StatefulList<T> {
 struct Task {
     name: String,
     is_complete: bool,
-    start: DateTime<Utc>,
+    start: Option<DateTime<Utc>>,
     end: Option<DateTime<Utc>>,
 }
 
@@ -96,7 +96,7 @@ impl Task {
         Self {
             name: name.to_string(),
             is_complete: false,
-            start: Utc::now(),
+            start: None,
             end: None,
         }
     }
@@ -331,7 +331,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             } else {
                 Color::Red
             };
-            ListItem::new(format!("{} : {}", task.name, task.start))
+            ListItem::new(format!("{} : {}", task.name, task.start.unwrap_or("")))
                 .style(Style::default().fg(color))
         })
         .collect();
