@@ -9,8 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fs, io,
-    path::PathBuf,
-    str::FromStr,
     time::{Duration, Instant},
 };
 use tui::{
@@ -187,7 +185,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     match fs::read_dir(&pomors_dir) {
         Ok(_) => {
             if let Ok(config_file) = fs::read_to_string(pomors_dir.join("config.json")) {
-                let config = serde_json::from_str::<Config>(&config_file);
+                let _config = serde_json::from_str::<Config>(&config_file);
             }
         }
         Err(e) => match e.kind() {
