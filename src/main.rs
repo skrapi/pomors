@@ -188,7 +188,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         Ok(_) => {
             if let Ok(config_file) = fs::read_to_string(pomors_dir.join("config.json")) {
                 let config = serde_json::from_str::<Config>(&config_file);
-                println!("{config:?}");
             }
         }
         Err(e) => match e.kind() {
@@ -198,7 +197,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     pomors_dir.join("config.json"),
                     serde_json::to_string_pretty(&DEFAULT_CONFIG)
                         .expect("The default config is not serializable."),
-                ).expect("Failed to write config.json.");
+                )
+                .expect("Failed to write config.json.");
             }
             _ => panic!("Error reading .config/pomors: {e}"),
         },
@@ -331,7 +331,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             } else {
                 Color::Red
             };
-            ListItem::new(format!("{} : {}", task.name, task.start.unwrap_or("")))
+            ListItem::new(format!("{} : {:?}", task.name, task.start))
                 .style(Style::default().fg(color))
         })
         .collect();
