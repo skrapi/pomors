@@ -99,17 +99,31 @@ impl Task {
         }
     }
 }
+
+struct Period {
+    start: Instant,
+    length: Duration,
+}
+
+enum AppState {
+    Working,
+    TakingABreak,
+}
 struct App {
-    time_start: Instant,
     pomodoro_length: Duration,
+    break_length: Duration,
     tasks: StatefulList<Task>,
+    state: AppState,
+    start_of_period: Instant,
 }
 
 impl App {
-    fn new(task_list: Vec<String>, pomodoro_length: Duration) -> App {
+    fn new(task_list: Vec<String>, pomodoro_length: Duration, break_length: Duration) -> App {
         App {
-            time_start: Instant::now(),
+            state: AppState::Working,
             pomodoro_length,
+            break_length,
+            start_of_period: Instant::now(),
             tasks: StatefulList::with_items(
                 task_list
                     .iter()
@@ -119,8 +133,30 @@ impl App {
         }
     }
 
+    fn period_length(&self) -> Duration {
+        match self.state {
+            AppState::Working => self.pomodoro_length,
+            AppState::TakingABreak => self.break_length,
+        }
+    }
+
     fn on_tick(&mut self) {
-        // TODO
+        if self.elapsed() > self.period_length() {
+            match self.state {
+                AppState::Working => self.state = AppState::TakingABreak,
+                AppState::TakingABreak => self.state = AppState::Working,
+            }
+
+            self.start_of_period = Instant::now();
+        }
+    }
+
+    fn elapsed(&self) -> Duration {
+        Instant::now() - self.start_of_period
+    }
+
+    fn remaining(&self) -> Duration {
+        self.period_length().saturating_sub(self.elapsed())
     }
 
     fn set_current(&mut self) {
@@ -211,8 +247,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // create app and run it
     let tick_rate = Duration::from_millis(250);
-    let mut app = App::new(args.task_list, Duration::from_secs(args.length * 60));
-
+    let mut app = App::new(
+        args.task_list,
+        Duration::from_secs(args.length * 60),
+        Duration::from_secs(5 * 60),
+    );
 
     // Select the first task
     app.tasks.next();
@@ -278,43 +317,47 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         )
         .split(f.size());
 
-    let elapsed = Instant::now() - app.time_start;
-    let remaining = app.pomodoro_length.saturating_sub(elapsed);
-    let remaining_min = remaining.as_secs() / 60;
-    let remaining_secs = remaining.as_secs() % 60;
+    let remaining_min = app.remaining().as_secs() / 60;
+    let remaining_secs = app.remaining().as_secs() % 60;
+
+
+    let (action, color) = match app.state {
+        AppState::Working => ("Task", Color::Red),
+        AppState::TakingABreak => ("Break", Color::Green),
+    };
 
     let gauge = Gauge::default()
         .block(
             Block::default()
-                .title(Span::styled(" Pomodoro ", Style::default().fg(Color::Red)))
+                .title(Span::styled(" Pomodoro ", Style::default().fg(color)))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Red)),
+                .border_style(Style::default().fg(color)),
         )
         .gauge_style(Style::default().fg(Color::Red))
-        .percent((elapsed.as_millis() * 100 / app.pomodoro_length.as_millis()).min(100) as u16);
+        .percent((app.elapsed().as_millis() * 100 / app.period_length().as_millis()).min(100) as u16);
     f.render_widget(gauge, chunks[0]);
 
-    let time_remaining_text = if !remaining.is_zero() {
+    let time_remaining_text = if !app.remaining().is_zero() {
         format!("Time remaining: {remaining_min} min {remaining_secs} secs")
     } else {
-        format!("Task completed")
+        format!("{action} completed")
     };
 
     let task = Spans::from(Span::styled(
         app.get_current_task_name()
             .unwrap_or(&"No task selected".to_string())
             .clone(),
-        Style::default().fg(Color::Red),
+        Style::default().fg(color),
     ));
 
     let time = Spans::from(Span::styled(
         time_remaining_text,
-        Style::default().fg(Color::Red),
+        Style::default().fg(color),
     ));
 
     let q_to_quit = Spans::from(Span::styled(
         "Press q to quit",
-        Style::default().fg(Color::Red),
+        Style::default().fg(color),
     ));
 
     let paragraph = Paragraph::new(vec![task, time, q_to_quit])
@@ -343,7 +386,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(" Task List ")
-                .border_style(Style::default().fg(Color::Red)),
+                .border_style(Style::default().fg(color)),
         )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
