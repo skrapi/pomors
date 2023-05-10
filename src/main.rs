@@ -211,7 +211,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // create app and run it
     let tick_rate = Duration::from_millis(250);
-    let app = App::new(args.task_list, Duration::from_secs(args.length * 60));
+    let mut app = App::new(args.task_list, Duration::from_secs(args.length * 60));
+
+
+    // Select the first task
+    app.tasks.next();
     let res = run_app(&mut terminal, app, tick_rate);
 
     // restore terminal
