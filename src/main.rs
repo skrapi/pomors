@@ -309,9 +309,9 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .margin(3)
         .constraints(
             [
-                Constraint::Percentage(20),
-                Constraint::Percentage(40),
-                Constraint::Percentage(40),
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
             ]
             .as_ref(),
         )
