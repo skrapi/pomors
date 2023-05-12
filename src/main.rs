@@ -5,11 +5,12 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use rusty_audio::Audio;
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
-    fs, io,
-    time::{Duration, Instant}, thread,
+    fs, io, thread,
+    time::{Duration, Instant},
 };
 use tui::{
     backend::{Backend, CrosstermBackend},
@@ -20,15 +21,43 @@ use tui::{
     Frame, Terminal,
 };
 
-use rusty_audio::Audio;
-
-struct StatefulList<T> {
-    state: ListState,
-    items: Vec<T>,
+struct Task {
+    name: String,
+    is_complete: bool,
+    work_periods: Vec<(DateTime<Utc>, DateTime<Utc>)>,
 }
 
-impl<T> StatefulList<T> {
-    fn with_items(items: Vec<T>) -> StatefulList<T> {
+impl Task {
+    fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            is_complete: false,
+            work_periods: Vec::new(),
+        }
+    }
+
+    fn activate(&mut self) {
+        self.work_periods.push((Utc::now(), Utc::now()))
+    }
+
+    fn deactivate(&mut self) {
+        if let Some(work_period) = self.work_periods.last_mut() {
+            if work_period.0 != work_period.1 {
+                return;
+            }
+
+            work_period.1 = Utc::now()
+        }
+    }
+}
+
+struct StatefulList {
+    state: ListState,
+    items: Vec<Task>,
+}
+
+impl StatefulList {
+    fn with_items(items: Vec<Task>) -> StatefulList {
         StatefulList {
             state: ListState::default(),
             items,
@@ -36,6 +65,10 @@ impl<T> StatefulList<T> {
     }
 
     fn next(&mut self) {
+        if let Some(selected_task) = self.get_selected_mut() {
+            selected_task.deactivate()
+        }
+
         let i = match self.state.selected() {
             Some(i) => {
                 if i >= self.items.len() - 1 {
@@ -47,9 +80,16 @@ impl<T> StatefulList<T> {
             None => 0,
         };
         self.state.select(Some(i));
+        if let Some(selected_task) = self.get_selected_mut() {
+            selected_task.activate()
+        }
     }
 
     fn previous(&mut self) {
+        if let Some(selected_task) = self.get_selected_mut() {
+            selected_task.deactivate()
+        }
+
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
@@ -61,13 +101,20 @@ impl<T> StatefulList<T> {
             None => 0,
         };
         self.state.select(Some(i));
+
+        if let Some(selected_task) = self.get_selected_mut() {
+            selected_task.activate()
+        }
     }
 
     fn unselect(&mut self) {
+        if let Some(selected_task) = self.get_selected_mut() {
+            selected_task.deactivate()
+        }
         self.state.select(None);
     }
 
-    fn get_selected_mut(&mut self) -> Option<&mut T> {
+    fn get_selected_mut(&mut self) -> Option<&mut Task> {
         if let Some(selected) = self.state.selected() {
             Some(&mut self.items[selected])
         } else {
@@ -75,29 +122,11 @@ impl<T> StatefulList<T> {
         }
     }
 
-    fn get_selected(&self) -> Option<&T> {
+    fn get_selected(&self) -> Option<&Task> {
         if let Some(selected) = self.state.selected() {
             Some(&self.items[selected])
         } else {
             None
-        }
-    }
-}
-
-struct Task {
-    name: String,
-    is_complete: bool,
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
-}
-
-impl Task {
-    fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            is_complete: false,
-            start: None,
-            end: None,
         }
     }
 }
@@ -114,7 +143,7 @@ enum AppState {
 struct App {
     pomodoro_length: Duration,
     break_length: Duration,
-    tasks: StatefulList<Task>,
+    tasks: StatefulList,
     state: AppState,
     start_of_period: Instant,
 }
@@ -339,24 +368,17 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(color)),
         )
-        .gauge_style(Style::default().fg(Color::Red))
+        .gauge_style(Style::default().fg(color))
         .percent(
             (app.elapsed().as_millis() * 100 / app.period_length().as_millis()).min(100) as u16,
         );
     f.render_widget(gauge, chunks[0]);
 
     let time_remaining_text = if !app.remaining().is_zero() {
-        format!("Time remaining: {remaining_min} min {remaining_secs} secs")
+        format!("{remaining_min} min {remaining_secs} secs")
     } else {
         format!("{action} completed")
     };
-
-    let task = Spans::from(Span::styled(
-        app.get_current_task_name()
-            .unwrap_or(&"No task selected".to_string())
-            .clone(),
-        Style::default().fg(color),
-    ));
 
     let time = Spans::from(Span::styled(
         time_remaining_text,
@@ -365,7 +387,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     let q_to_quit = Spans::from(Span::styled("Press q to quit", Style::default().fg(color)));
 
-    let paragraph = Paragraph::new(vec![task, time, q_to_quit])
+    let paragraph = Paragraph::new(vec![time, q_to_quit])
         .style(Style::default())
         .block(Block::default());
 
@@ -381,7 +403,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             } else {
                 Color::Red
             };
-            ListItem::new(format!("{} : {:?}", task.name, task.start))
+            ListItem::new(format!("{} : {:?}", task.name, task.work_periods))
                 .style(Style::default().fg(color))
         })
         .collect();
