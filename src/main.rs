@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fs, io,
-    time::{Duration, Instant},
+    time::{Duration, Instant}, thread,
 };
 use tui::{
     backend::{Backend, CrosstermBackend},
@@ -19,6 +19,8 @@ use tui::{
     widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
+
+use rusty_audio::Audio;
 
 struct StatefulList<T> {
     state: ListState,
@@ -146,6 +148,11 @@ impl App {
                 AppState::Working => self.state = AppState::TakingABreak,
                 AppState::TakingABreak => self.state = AppState::Working,
             }
+
+            let mut audio = Audio::new();
+            audio.add("startup", "creepy-church-bell-33827.mp3"); // Load the sound, give it a name
+            audio.play("startup"); // Execution continues while playback occurs in another thread.
+            thread::sleep(Duration::from_secs(5));
 
             self.start_of_period = Instant::now();
         }
@@ -306,7 +313,7 @@ fn run_app<B: Backend>(
 fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(3)
+        .margin(1)
         .constraints(
             [
                 Constraint::Ratio(1, 3),
@@ -319,7 +326,6 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     let remaining_min = app.remaining().as_secs() / 60;
     let remaining_secs = app.remaining().as_secs() % 60;
-
 
     let (action, color) = match app.state {
         AppState::Working => ("Task", Color::Red),
@@ -334,7 +340,9 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                 .border_style(Style::default().fg(color)),
         )
         .gauge_style(Style::default().fg(Color::Red))
-        .percent((app.elapsed().as_millis() * 100 / app.period_length().as_millis()).min(100) as u16);
+        .percent(
+            (app.elapsed().as_millis() * 100 / app.period_length().as_millis()).min(100) as u16,
+        );
     f.render_widget(gauge, chunks[0]);
 
     let time_remaining_text = if !app.remaining().is_zero() {
@@ -355,10 +363,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         Style::default().fg(color),
     ));
 
-    let q_to_quit = Spans::from(Span::styled(
-        "Press q to quit",
-        Style::default().fg(color),
-    ));
+    let q_to_quit = Spans::from(Span::styled("Press q to quit", Style::default().fg(color)));
 
     let paragraph = Paragraph::new(vec![task, time, q_to_quit])
         .style(Style::default())
