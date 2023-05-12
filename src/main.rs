@@ -37,7 +37,8 @@ impl Task {
     }
 
     fn activate(&mut self) {
-        self.work_periods.push((Utc::now(), Utc::now()))
+        let time = Utc::now();
+        self.work_periods.push((time.clone(), time))
     }
 
     fn deactivate(&mut self) {
@@ -48,6 +49,12 @@ impl Task {
 
             work_period.1 = Utc::now()
         }
+    }
+
+    fn task_total_duration(&self) -> chrono::Duration {
+        self.work_periods
+            .iter()
+            .fold(chrono::Duration::zero(), |acc, work_period| acc + (work_period.1 - work_period.0))
     }
 }
 
@@ -403,7 +410,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             } else {
                 Color::Red
             };
-            ListItem::new(format!("{} : {:?}", task.name, task.work_periods))
+            ListItem::new(format!("{} : {:?}: {}", task.name, task.task_total_duration(), task.work_periods.len()))
                 .style(Style::default().fg(color))
         })
         .collect();
