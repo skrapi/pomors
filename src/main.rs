@@ -21,6 +21,7 @@ use tui::{
     Frame, Terminal,
 };
 
+#[derive(Serialize, Deserialize)]
 struct Task {
     name: String,
     is_complete: bool,
@@ -323,7 +324,7 @@ fn run_app<B: Backend>(
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     loop {
-        terminal.draw(|f| ui(f, &mut app))?;
+        terminal.draw(|f| planner_ui(f, &mut app))?;
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
@@ -346,7 +347,7 @@ fn run_app<B: Backend>(
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+fn pomodoro_ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -427,4 +428,46 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     // We can now render the item list
     f.render_stateful_widget(items, chunks[2], &mut app.tasks.state);
+}
+
+fn planner_ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+    let color = Color::LightBlue;
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints(
+            [
+                Constraint::Ratio(1, 3),
+            ]
+            .as_ref(),
+        )
+        .split(f.size());
+    
+    let items: Vec<ListItem> = app
+        .tasks
+        .items
+        .iter()
+        .map(|task| {
+            let color = if task.is_complete {
+                Color::Green
+            } else {
+                Color::Red
+            };
+            ListItem::new(format!("{} : {:?}: {}", task.name, task.task_total_duration(), task.work_periods.len()))
+                .style(Style::default().fg(color))
+        })
+        .collect();
+
+    let items = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Task List ")
+                .border_style(Style::default().fg(color)),
+        )
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(">> ");
+
+    // We can now render the item list
+    f.render_stateful_widget(items, chunks[0], &mut app.tasks.state);
 }

@@ -9,5 +9,6 @@ or
 
 
 ## Cool new feature ideas
-* Add a time spent on each task, which updates while the task is selected
+* Add a time spent on each task, which updates while the task is selected - Done
 * A text file based database, ie save [task_name, completion_state, time_elapsed]
+* Create a different pane to create and manage tasks
