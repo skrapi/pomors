@@ -55,7 +55,9 @@ impl Task {
     fn task_total_duration(&self) -> chrono::Duration {
         self.work_periods
             .iter()
-            .fold(chrono::Duration::zero(), |acc, work_period| acc + (work_period.1 - work_period.0))
+            .fold(chrono::Duration::zero(), |acc, work_period| {
+                acc + (work_period.1 - work_period.0)
+            })
     }
 }
 
@@ -228,6 +230,14 @@ impl App {
             None
         }
     }
+
+    fn backspace_task(&mut self) {
+        if let Some(task) = self.tasks.get_selected_mut() {
+            if task.name.len() != 0 {
+                task.name.truncate(task.name.len() - 1)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -332,10 +342,11 @@ fn run_app<B: Backend>(
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
-                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Esc => return Ok(()),
                     KeyCode::Down => app.tasks.next(),
                     KeyCode::Up => app.tasks.previous(),
                     KeyCode::Enter => app.toggle_current_task(),
+                    KeyCode::Backspace => app.backspace_task(),
                     _ => {}
                 }
             }
@@ -393,7 +404,7 @@ fn pomodoro_ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         Style::default().fg(color),
     ));
 
-    let q_to_quit = Spans::from(Span::styled("Press q to quit", Style::default().fg(color)));
+    let q_to_quit = Spans::from(Span::styled("Press ESC to quit", Style::default().fg(color)));
 
     let paragraph = Paragraph::new(vec![time, q_to_quit])
         .style(Style::default())
@@ -411,8 +422,13 @@ fn pomodoro_ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             } else {
                 Color::Red
             };
-            ListItem::new(format!("{} : {:?}: {}", task.name, task.task_total_duration(), task.work_periods.len()))
-                .style(Style::default().fg(color))
+            ListItem::new(format!(
+                "{} : {:?}: {}",
+                task.name,
+                task.task_total_duration(),
+                task.work_periods.len()
+            ))
+            .style(Style::default().fg(color))
         })
         .collect();
 
@@ -435,14 +451,9 @@ fn planner_ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
-        .constraints(
-            [
-                Constraint::Ratio(1, 3),
-            ]
-            .as_ref(),
-        )
+        .constraints([Constraint::Ratio(1, 3)].as_ref())
         .split(f.size());
-    
+
     let items: Vec<ListItem> = app
         .tasks
         .items
@@ -453,8 +464,13 @@ fn planner_ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             } else {
                 Color::Red
             };
-            ListItem::new(format!("{} : {:?}: {}", task.name, task.task_total_duration(), task.work_periods.len()))
-                .style(Style::default().fg(color))
+            ListItem::new(format!(
+                "{} : {:?}: {}",
+                task.name,
+                task.task_total_duration(),
+                task.work_periods.len()
+            ))
+            .style(Style::default().fg(color))
         })
         .collect();
 
